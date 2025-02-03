@@ -10,14 +10,13 @@ import { route, sitemapPlugin } from "./plugins/sitemap.ts";
 import { twindPlugin } from "./plugins/twind.ts";
 
 import { assetsRoute } from "./routes/assets-route.ts";
-import { docsRoute } from "./routes/docs-route.tsx";
+import { guidesRoute } from "./routes/guides-route.tsx";
 import { indexRoute } from "./routes/index-route.tsx";
 import { apiReferenceRoute } from "./routes/api-reference-route.tsx";
 import { contribIndexRoute } from "./routes/contrib-index-route.tsx";
 import { contribPackageRoute } from "./routes/contrib-package-route.tsx";
 
 import { patchDenoPermissionsQuerySync } from "./deno-deploy-patch.ts";
-import { loadDocs } from "./resources/docs.ts";
 import { loadRepository } from "./resources/repository.ts";
 import { initGithubClientContext } from "./context/github.ts";
 import { initJSRClient } from "./context/jsr.ts";
@@ -70,20 +69,17 @@ if (import.meta.main) {
       owner: "thefrontside",
       name: "effection-contrib",
     });
-    yield* ContribRepositoryContext.set(contrib);
 
-    let docs = yield* loadDocs({ repo: library, pattern: "effection-v3" });
-    let docsV4 = yield* loadDocs({ repo: library, pattern: "effection-v4" });
+    yield* ContribRepositoryContext.set(contrib);
 
     let revolution = createRevolution({
       app: [
         route("/", indexRoute()),
         route("/search", searchRoute()),
         route(
-          "/docs/v4/:id",
-          docsRoute({ docs: docsV4, search: true, series: "v4" }),
+          "/docs{/:series}{/:id}",
+          guidesRoute({ repository: library, search: true }),
         ),
-        route("/docs/:id", docsRoute({ docs, search: true, series: "v3" })),
         route("/contrib", contribIndexRoute({ contrib, search: true })),
         route(
           "/contrib/:workspacePath",
@@ -108,10 +104,10 @@ if (import.meta.main) {
           apiMinorSymbolRoute({ library, search: false }),
         ),
         route(
-          "/pagefind(.*)",
+          "/pagefind{/*path}",
           pagefindRoute({ pagefindDir: "pagefind", publicDir: "./built/" }),
         ),
-        route("/assets(.*)", assetsRoute("assets")),
+        route("/assets{/*path}", assetsRoute("assets")),
         route("/preview", previewRoute({ library })),
         route("/preview/api/:symbol", previewApiRoute({ library })),
       ],
