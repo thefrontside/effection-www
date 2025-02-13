@@ -7,12 +7,11 @@ import {
   useScope,
 } from "effection";
 import { basename } from "jsr:@std/path@1.0.8";
+import { Repository } from "./repository.ts";
 import { z } from "npm:zod@3.23.8";
-import { JSXElement } from "revolution/jsx-runtime";
-
 import { useMarkdown } from "../hooks/use-markdown.tsx";
 import { createToc } from "../lib/toc.ts";
-import { RepositoryRef } from "./repository-ref.ts";
+import { JSXElement } from "revolution/jsx-runtime";
 
 export interface DocModule {
   default: () => JSX.Element;
@@ -22,27 +21,26 @@ export interface DocModule {
   };
 }
 
-export interface Guides {
-  all(): Operation<GuidesPage[]>;
-  get(id?: string): Operation<GuidesPage | undefined>;
-  first(): Operation<GuidesPage>;
+export interface Docs {
+  all(): Operation<Doc[]>;
+  getDoc(id?: string): Operation<Doc | undefined>;
 }
 
 export interface Topic {
   name: string;
-  items: GuidesMeta[];
+  items: DocMeta[];
 }
 
-export interface GuidesMeta {
+export interface DocMeta {
   id: string;
   title: string;
   filename: string;
   topics: Topic[];
-  next?: GuidesMeta;
-  prev?: GuidesMeta;
+  next?: DocMeta;
+  prev?: DocMeta;
 }
 
-export interface GuidesPage extends GuidesMeta {
+export interface Doc extends DocMeta {
   content: JSXElement;
   toc: JSXElement;
   markdown: string;
@@ -55,20 +53,28 @@ const Structure = z.record(
 
 export type StructureJson = z.infer<typeof Structure>;
 
-export function guides(
-  { ref }: { ref: RepositoryRef },
-): Operation<Guides> {
+export function loadDocs(
+  { repo, pattern }: { repo: Repository; pattern: string },
+): Operation<Docs> {
   return resource(function* (provide) {
-    let loaders: Map<string, Task<GuidesPage>> | undefined = undefined;
+    let loaders: Map<string, Task<Doc>> | undefined = undefined;
 
     let scope = yield* useScope();
 
-    function* fetchLoaders() {
+    function* load() {
+      const latest = yield* repo.getLatestSemverTag(pattern);
+
+      if (!latest) {
+        throw new Error(`Could not retrieve latest tag for "${pattern}"`);
+      }
+
+      const ref = yield* repo.loadRef(`tags/${latest.name}`);
+
       const json = yield* ref.loadJson("docs/structure.json");
 
       const structure = Structure.parse(json);
 
-      let tasks = new Map<string, Task<GuidesPage>>();
+      let tasks = new Map<string, Task<Doc>>();
       let entries = Object.entries(structure);
 
       let topics: Topic[] = [];
@@ -77,11 +83,11 @@ export function guides(
         let topic: Topic = { name, items: [] };
         topics.push(topic);
 
-        let current: GuidesMeta | undefined = void (0);
+        let current: DocMeta | undefined = void (0);
         for (let i = 0; i < contents.length; i++) {
-          let prev: GuidesMeta | undefined = current;
+          let prev: DocMeta | undefined = current;
           let [filename, title] = contents[i];
-          let meta: GuidesMeta = current = {
+          let meta: DocMeta = current = {
             id: basename(filename, ".mdx"),
             title,
             filename: `docs/${filename}`,
@@ -113,25 +119,18 @@ export function guides(
       return tasks;
     }
 
-    function* load() {
-      if (!loaders) {
-        loaders = yield* fetchLoaders();
-      }
-      return loaders;
-    }
-
     yield* provide({
-      *first() {
-        const [[_id, task]] = (yield* load()).entries();
-        return yield* task;
-      },
       *all() {
-        const loaders = yield* load();
+        if (!loaders) {
+          loaders = yield* load();
+        }
         return yield* all([...loaders.values()]);
       },
-      *get(id) {
+      *getDoc(id) {
         if (id) {
-          const loaders = yield* load();
+          if (!loaders) {
+            loaders = yield* load();
+          }
           let task = loaders.get(id);
           if (task) {
             return yield* task;

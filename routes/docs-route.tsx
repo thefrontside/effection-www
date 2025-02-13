@@ -1,103 +1,47 @@
-import { all, Operation } from "effection";
+import { Operation } from "effection";
 import { type JSXElement, respondNotFound, useParams } from "revolution";
 
 import { useDescription } from "../hooks/use-description-parse.tsx";
 import { RoutePath, SitemapRoute } from "../plugins/sitemap.ts";
-import { guides, type GuidesMeta } from "../resources/guides.ts";
+import type { DocMeta, Docs } from "../resources/docs.ts";
 import { useAppHtml } from "./app.html.tsx";
-import { createChildURL, createSibling } from "./links-resolvers.ts";
+import { createSibling } from "./links-resolvers.ts";
 import { Navburger } from "../components/navburger.tsx";
-import { Repository } from "../resources/repository.ts";
-import { softRedirect } from "./redirect.tsx";
-import { IconExternal } from "../components/icons/external.tsx";
 
-export function* getSeriesRef({
-  repository,
-  series,
-}: {
-  repository: Repository;
-  series: string;
-}) {
-  const latest = yield* repository.getLatestSemverTag(`effection-${series}`);
-
-  if (!latest) {
-    throw new Error(`Could not retrieve latest tag for "effection-${series}"`);
-  }
-
-  return yield* repository.loadRef(`tags/${latest.name}`);
-}
-
-export function firstPage({
-  repository,
-  series,
-}: {
-  repository: Repository;
-  series: string;
-}) {
-  return function* () {
-    const ref = yield* getSeriesRef({ repository, series });
-    const pages = yield* guides({ ref });
-
-    const page = yield* pages.first();
-    return yield* createChildURL()(page.id);
-  };
-}
-
-const SERIES = ["v3", "v4"];
-const STABLE_SERIES = "v3";
-
-export function guidesRoute({
+export function docsRoute({
+  docs,
   search,
-  repository,
+  series,
 }: {
-  repository: Repository;
+  docs: Docs;
   search: boolean;
+  series: string;
 }): SitemapRoute<JSXElement> {
   return {
     *routemap(pathname) {
-      const paths = SERIES.map(function* (series) {
-        let paths: RoutePath[] = [];
-        const ref = yield* getSeriesRef({ repository, series });
-        const pages = yield* guides({ ref });
-
-        for (let page of yield* pages.all()) {
-          paths.push({
-            pathname: pathname({ id: page.id, series }),
-          });
-        }
-        return paths;
-      });
-      return (yield* all(paths)).flat();
-    },
-    *handler(req) {
-      let { id, series = STABLE_SERIES } = yield* useParams<{
-        id: string | undefined;
-        series: string | undefined;
-      }>();
-
-      const ref = yield* getSeriesRef({ repository, series });
-      const pages = yield* guides({ ref });
-
-      if (!id) {
-        const page = yield* pages.first();
-        return yield* softRedirect(
-          req,
-          yield* createChildURL()(`${series}/${page.id}`),
-        );
+      let paths: RoutePath[] = [];
+      for (let doc of yield* docs.all()) {
+        paths.push({
+          pathname: pathname({ id: doc.id }),
+        });
       }
+      return paths;
+    },
+    *handler() {
+      let { id } = yield* useParams<{ id: string }>();
 
-      const page = yield* pages.get(id);
+      const doc = yield* docs.getDoc(id);
 
-      if (!page) {
+      if (!doc) {
         return yield* respondNotFound();
       }
 
-      let { topics } = page;
+      let { topics } = doc;
 
-      const description = yield* useDescription(page.markdown);
+      const description = yield* useDescription(doc.markdown);
 
       let AppHtml = yield* useAppHtml({
-        title: `${page.title} | Docs | Effection`,
+        title: `${doc.title} | Docs | Effection`,
         description,
         hasLeftSidebar: true,
       });
@@ -109,7 +53,7 @@ export function guidesRoute({
         for (const item of topic.items) {
           items.push(
             <li class="mt-1">
-              {page.id !== item.id
+              {doc.id !== item.id
                 ? (
                   <a
                     class="rounded px-4 block w-full py-2 hover:bg-gray-100"
@@ -128,7 +72,7 @@ export function guidesRoute({
         }
         topicsList.push(
           <hgroup class="mb-2">
-            <h3 class="font-semibold">{topic.name}</h3>
+            <h3 class="text-lg">{topic.name}</h3>
             <menu class="text-gray-700">{items}</menu>
           </hgroup>,
         );
@@ -160,31 +104,20 @@ export function guidesRoute({
               </style>
             </aside>
             <aside class="min-h-0 overflow-auto hidden md:block top-[120px] sticky h-fit">
-              <div class="text-xl flex flex-row items-baseline space-x-2 mb-3">
-                <span class="font-bold">Guides</span>
-                <a href={ref.url} class="text-base">
-                  {series}{" "}
-                  <IconExternal
-                    class="inline-block align-baseline"
-                    height="15"
-                    width="15"
-                  />
-                </a>
-              </div>
-              <nav>{topicsList}</nav>
+              <nav class="pl-4">{topicsList}</nav>
             </aside>
             <article
               class="prose max-w-full px-6 py-2"
               data-pagefind-filter={`version[data-series], section:Guides`}
               data-series={series}
             >
-              <h1>{page.title}</h1>
-              <>{page.content}</>
-              {yield* NextPrevLinks({ page })}
+              <h1>{doc.title}</h1>
+              <>{doc.content}</>
+              {yield* NextPrevLinks({ doc })}
             </article>
             <aside class="min-h-0 overflow-auto sticky h-fit hidden md:block top-[120px]">
               <h3>On this page</h3>
-              <div class="w-[200px]">{page.toc}</div>
+              <div class="w-[200px]">{doc.toc}</div>
             </aside>
           </section>
         </AppHtml>
@@ -193,8 +126,13 @@ export function guidesRoute({
   };
 }
 
-function* NextPrevLinks({ page }: { page: GuidesMeta }): Operation<JSXElement> {
-  let { next, prev } = page;
+function* NextPrevLinks({
+  doc,
+}: {
+  doc: DocMeta;
+  base?: string;
+}): Operation<JSXElement> {
+  let { next, prev } = doc;
   return (
     <menu class="grid grid-cols-2 my-10 gap-x-2 xl:gap-x-20 2xl:gap-x-40 text-lg">
       {prev
