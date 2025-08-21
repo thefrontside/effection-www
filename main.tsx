@@ -1,4 +1,4 @@
-import { main, suspend } from "effection";
+import { exit, main, suspend } from "effection";
 import { initDenoDeploy } from "@effectionx/deno-deploy";
 import { createRevolution, ServerInfo } from "revolution";
 
@@ -32,31 +32,39 @@ import { redirectDocsRoute } from "./routes/redirect-docs-route.tsx";
 import { redirectIndexRoute } from "./routes/redirect-index-route.tsx";
 import { searchRoute } from "./routes/search-route.tsx";
 
+import { describeCLI, parse } from "./config.ts";
+
 // Learn more at https://docs.deno.com/runtime/manual/examples/module_metadata#concepts
 if (import.meta.main) {
   await main(function* () {
+    let input = {
+      env: Deno.env.toObject(),
+      args: Deno.args,
+    };
+
+    let result = parse(input);
+
+    if (!result.ok) {
+      console.log(result.summary);
+      console.log();
+      console.log(describeCLI(input, "main.tsx"));
+      return yield* exit(64);
+    }
+
+    let { config } = result;
+
     const denoDeploy = yield* initDenoDeploy();
 
     if (denoDeploy.isDenoDeploy) {
       patchDenoPermissionsQuerySync();
     }
 
-    const jsrToken = Deno.env.get("JSR_API") ?? "";
-    if (jsrToken === "") {
-      console.log("Missing JSR API token; expect score card not to load.");
-    }
-
     yield* initJSRClient({
-      token: jsrToken,
+      token: config.jsrToken,
     });
 
-    const githubToken = Deno.env.get("GITHUB_TOKEN");
-    if (!githubToken) {
-      throw new Error(`GITHUB_TOKEN environment variable is missing`);
-    }
-
     yield* initGithubClientContext({
-      token: githubToken,
+      token: config.githubToken,
     });
 
     let library = yield* loadRepository({
