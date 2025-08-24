@@ -14,7 +14,11 @@ import { xPackageRedirect, xPackageRoute } from "./routes/x-package-route.tsx";
 import { firstPage, guidesRoute } from "./routes/guides-route.tsx";
 import { indexRoute } from "./routes/index-route.tsx";
 
-import { initGithubClientContext } from "./context/github.ts";
+import {
+  initGithubClientContext,
+  rewriteContentsApiToGit,
+  rewriteGitToFile,
+} from "./context/github.ts";
 import { initJSRClient } from "./context/jsr.ts";
 import {
   LibraryRepositoryContext,
@@ -31,6 +35,9 @@ import { previewRoute } from "./routes/preview-route.tsx";
 import { redirectDocsRoute } from "./routes/redirect-docs-route.tsx";
 import { redirectIndexRoute } from "./routes/redirect-index-route.tsx";
 import { searchRoute } from "./routes/search-route.tsx";
+import { initFetch } from "./context/fetch.ts";
+import { urlRewriteApi } from "./context/url-rewrite.ts";
+import { parse } from "node:path";
 
 // Learn more at https://docs.deno.com/runtime/manual/examples/module_metadata#concepts
 if (import.meta.main) {
@@ -55,6 +62,19 @@ if (import.meta.main) {
       throw new Error(`GITHUB_TOKEN environment variable is missing`);
     }
 
+    const EFFECTION_REPO = Deno.env.get("EFFECTION_REPO");
+
+    yield* initFetch();
+
+    if (EFFECTION_REPO) {
+      console.log(`💪 Using ${EFFECTION_REPO} via file rewrite middleware.`);
+      yield* rewriteGitToFile(EFFECTION_REPO);
+
+      yield* rewriteContentsApiToGit(
+        (parts) => parts.owner === "thefrontside" && parts.repo === "effection",
+      );
+    }
+
     yield* initGithubClientContext({
       token: githubToken,
     });
@@ -63,6 +83,7 @@ if (import.meta.main) {
       owner: "thefrontside",
       name: "effection",
     });
+
     yield* LibraryRepositoryContext.set(library);
 
     let x = yield* loadRepository({
