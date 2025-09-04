@@ -77,7 +77,7 @@ export function* Header(props?: HeaderProps) {
             <li class="hidden md:flex">
               <a
                 class="flex flex-row items-center space-x-1 hover:text-pink-secondary dark:hover:text-blue-secondary transition-colors duration-200"
-                href="https://discord.gg/r6AvtnU"
+                href="https://discord.gg/Ug5nWH8"
               >
                 <IconDiscord />
                 <span>Discord</span>
