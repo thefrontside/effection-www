@@ -1,10 +1,12 @@
-Deno.serve(() =>
-  new Response(null, {
+Deno.serve((request) => {
+  let url = new URL(request.url);
+  let location = new URL("https://frontside.com/");
+  location.pathname = `/effection${url.pathname}`;
+  return new Response(null, {
     headers: {
-      "X-Robots-Tag": "noindex",
-      "Location": "https://frontside.com/effection/",
+      "Location": String(location),
     },
     status: 301,
     statusText: "Moved Permanently",
-  })
-);
+  });
+});
